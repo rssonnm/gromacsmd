@@ -188,15 +188,22 @@ class GromacsMDSimulation:
             # Note: This won't work in subprocess, user needs to source manually
             print_warning(f"Please run: source {gmxrc_path}")
     
-    def step_1_pdb2gmx(self, force_field: int = 8, water_model: int = 1):
+    def step_1_pdb2gmx(self, force_field: int = 6, water_model: int = 1):
         """
         Step 1: Convert PDB to GROMACS format
         
         Args:
-            force_field: Force field selection (default: 8 = CHARMM27)
+            force_field: Force field selection (default: 6 = AMBER99SB-ILDN, supports NME/ACE caps)
             water_model: Water model selection (default: 1 = TIP3P)
         """
         print_header("STEP 1: PDB2GMX - Chuyển đổi cấu trúc")
+        
+        print("Force fields có sẵn:")
+        print("  1: AMBER03    5: AMBER99SB       8: CHARMM27")
+        print("  2: AMBER94    6: AMBER99SB-ILDN  9-14: GROMOS96")
+        print("  3: AMBER96    7: AMBERGS         15: OPLS-AA/L")
+        print("  4: AMBER99")
+        print(f"\n{Colors.CYAN}Đang sử dụng: Force field {force_field}, Water model {water_model}{Colors.END}\n")
         
         print_step(1, "Chạy pdb2gmx để tạo topology")
         
@@ -211,7 +218,7 @@ class GromacsMDSimulation:
             f"gmx pdb2gmx -f \"{pdb_name}\" -o processed.gro -ignh",
             input_text=input_text
         )
-        print_success("Đã tạo: conf.gro, topol.top, posre.itp")
+        print_success("Đã tạo: processed.gro, topol.top, posre.itp")
     
     def step_2_editconf(self, distance: float = 1.0, box_type: str = "triclinic"):
         """
