@@ -1,18 +1,31 @@
-; LINES STARTING WITH ';' ARE COMMENTS
-title		    = Minimization	; Title of run
+; ============================================================
+; Ion Placement Pre-processing (ions.mdp)
+; Minimal run for genion — uses steepest descent without PME
+; Q1-level MD simulation parameters
+; ============================================================
 
-; Parameters describing what to do, when to stop and what to save
-integrator	    = steep		; Algorithm (steep = steepest descent minimization)
-emtol		    = 1000.0  	; Stop minimization when the maximum force < 10.0 kJ/mol
-emstep          = 0.01      ; Energy step size
-nsteps		    = 50000	  	; Maximum number of (minimization) steps to perform
+title               = Ion placement pre-processing
 
-; Parameters describing how to find the neighbors of each atom and how to calculate the interactions
-nstlist		    = 1		    ; Frequency to update the neighbor list and long range forces
-cutoff-scheme   = Verlet
-ns_type		    = grid		; Method to determine neighbor list (simple, grid)
-rlist		    = 1.0		; Cut-off for making neighbor list (short range forces)
-coulombtype	    = cutoff	; Treatment of long range electrostatic interactions
-rcoulomb	    = 1.0		; long range electrostatic cut-off
-rvdw		    = 1.0		; long range Van der Waals cut-off
-pbc             = xyz 		; Periodic Boundary Conditions
+; ── Run Control ─────────────────────────────────────────────
+integrator          = steep
+emtol               = 1000.0        ; lenient — only for genion preprocessing
+emstep              = 0.01
+nsteps              = 50000
+
+; ── Neighbor Searching ──────────────────────────────────────
+cutoff-scheme       = Verlet
+ns_type             = grid
+nstlist             = 1
+rlist               = 1.2
+
+; ── Electrostatics ──────────────────────────────────────────
+; Use reaction-field (not PME) for genion step — avoids FFT for large boxes
+coulombtype         = cutoff        ; simple cutoff acceptable for genion
+rcoulomb            = 1.2
+
+; ── Van der Waals ───────────────────────────────────────────
+vdwtype             = cutoff
+rvdw                = 1.2
+
+; ── Periodic Boundary Conditions ────────────────────────────
+pbc                 = xyz

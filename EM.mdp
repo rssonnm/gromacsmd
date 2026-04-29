@@ -1,22 +1,40 @@
-; LINES STARTING WITH ';' ARE COMMENTS
-title		    = Minimization	; Title of run
+; ============================================================
+; Energy Minimization (EM) - Steepest Descent
+; Q1-level MD simulation parameters
+; Force field: CHARMM36m / AMBER-compatible
+; Reference: Best et al., JCTC 2012; GROMACS manual 2023
+; ============================================================
 
-; Parameters describing what to do, when to stop and what to save
-integrator	    = steep		; Algorithm (steep = steepest descent minimization)
-emtol		    = 1000.0  	; Stop minimization when the maximum force < 10.0 kJ/mol
-emstep          = 0.01      ; Energy step size
-nsteps		    = 50000	  	; Maximum number of (minimization) steps to perform
+title               = Energy Minimization
 
-; Parameters describing how to find the neighbors of each atom and how to calculate the interactions
-nstlist		    = 1		        ; Frequency to update the neighbor list and long range forces
-cutoff-scheme   = Verlet
-ns_type		    = grid		    ; Method to determine neighbor list (simple, grid)
-rlist		    = 1.2		    ; Cut-off for making neighbor list (short range forces)
-coulombtype	    = PME		    ; Treatment of long range electrostatic interactions
-rcoulomb	    = 1.2		    ; long range electrostatic cut-off
-vdwtype         = cutoff
-vdw-modifier    = force-switch
-rvdw-switch     = 1.0
-rvdw		    = 1.2		    ; long range Van der Waals cut-off
-pbc             = xyz 		    ; Periodic Boundary Conditions
-DispCorr        = no
+; ── Run Control ─────────────────────────────────────────────
+integrator          = steep         ; steepest descent minimization
+emtol               = 500.0         ; converge when Fmax < 500 kJ/mol/nm
+emstep              = 0.01          ; initial step size (nm)
+nsteps              = 100000        ; max minimization steps
+
+; ── Neighbor Searching ──────────────────────────────────────
+cutoff-scheme       = Verlet        ; buffered neighbor searching (default since GROMACS 5)
+ns_type             = grid          ; grid-based neighbor list
+nstlist             = 1             ; update neighbor list every step (EM always uses 1)
+rlist               = 1.2           ; short-range cutoff (nm) — consistent with rcoulomb/rvdw
+
+; ── Electrostatics ──────────────────────────────────────────
+coulombtype         = PME           ; Particle Mesh Ewald for long-range electrostatics
+rcoulomb            = 1.2           ; real-space PME cutoff (nm)
+pme_order           = 4             ; cubic B-spline interpolation
+fourierspacing      = 0.12          ; PME FFT grid spacing (nm); finer than 0.16 for accuracy
+
+; ── Van der Waals ───────────────────────────────────────────
+vdwtype             = cutoff
+vdw-modifier        = force-switch  ; CHARMM36 recommended switching function
+rvdw-switch         = 1.0           ; distance at which switching begins (nm)
+rvdw                = 1.2           ; VdW cutoff (nm)
+
+; ── Dispersion Correction ────────────────────────────────────
+; Disabled per CHARMM36 / PME+force-switch recommendations
+; (DispCorr interferes with force-switch modifier)
+DispCorr            = no
+
+; ── Periodic Boundary Conditions ────────────────────────────
+pbc                 = xyz           ; full 3-D PBC
