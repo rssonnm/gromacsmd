@@ -1057,6 +1057,70 @@ class MDSimulation:
                 check=False
             )
 
+        # 9. Secondary structure (DSSP) — time evolution
+        print_step(16, "Secondary structure (DSSP)")
+        run_cmd(
+            "gmx dssp -s md.tpr -f md.xtc -o ss.xpm -sc scount.xvg",
+            input_text="Protein\n", check=False
+        )
+
+        # 10. Residue-residue contact map (fraction of frames)
+        print_step(17, "Residue contact map")
+        run_cmd(
+            "gmx mdmat -s md.tpr -f md.xtc -mean -t 0.35 -o contacts.xpm",
+            input_text="C-alpha\n", check=False
+        )
+
+        # 11. H-bond autocorrelation (lifetime)
+        if self.has_ligand:
+            print_step(18, "H-bond autocorrelation (lifetime)")
+            run_cmd(
+                f"gmx hbond -s md.tpr -f md.xtc {idx} "
+                f"-ac hbac.xvg -num hbond.xvg",
+                input_text=f"Protein\n{self.ligand_name}\n", check=False
+            )
+
+        # 12. Mean Square Displacement (protein diffusion)
+        print_step(19, "MSD — protein diffusion")
+        run_cmd(
+            "gmx msd -s md.tpr -f md.xtc -o msd.xvg -lateral z",
+            input_text="Protein\n", check=False
+        )
+
+        # 13. Salt bridges
+        print_step(20, "Salt bridge distances")
+        run_cmd(
+            "gmx saltbr -s md.tpr -f md.xtc -t 0.4 -sep",
+            check=False
+        )
+
+        # 14. Backbone dihedral angle (Phi/Psi) distribution over time
+        print_step(21, "Backbone dihedral angles")
+        run_cmd(
+            "gmx angle -s md.tpr -f md.xtc -type dihedral -ov dihedral.xvg",
+            check=False
+        )
+
+        # 15. Cluster RMSD distribution (already from step 10, verify output)
+        print_step(22, "Cluster RMSD distribution histogram")
+        run_cmd(
+            "gmx cluster -s md.tpr -f md.xtc -dist cluster_dist.xvg "
+            "-cl cluster_main.gro -cutoff 0.2 -method gromos -g cluster.log",
+            input_text="C-alpha\nC-alpha\n", check=False
+        )
+
+        # 16. Equilibration energy terms (NVT + NPT)
+        for stage, edr in [("nvt", "nvt.edr"), ("npt", "npt.edr")]:
+            if file_exists(edr):
+                print_step(23, f"Equilibration energy terms ({stage.upper()})")
+                for prop, out in [
+                    ("Temperature", f"{stage}_temperature.xvg"),
+                    ("Pressure",    f"{stage}_pressure.xvg"),
+                    ("Potential",   f"{stage}_potential.xvg"),
+                ]:
+                    run_cmd(f"gmx energy -f {edr} -o {out}",
+                            input_text=f"{prop}\n\n", check=False)
+
         print_success("Post-processing analysis complete.")
         print_info("Run 'python3 gromacsviz.py' to generate publication figures.")
         return True

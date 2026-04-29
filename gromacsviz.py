@@ -568,6 +568,310 @@ def plot_transition_path(cluster_log, output='results_plot/Cluster_Transition.pn
     plt.savefig(output)
     print(f"Saved: {output}")
 
+
+# ── New extended analyses ──────────────────────────────────────────────────────
+
+def plot_rmsd(rmsd_file, output='results_plot/RMSD.png'):
+    """Plot RMSD time series with moving average."""
+    data = read_xvg(rmsd_file)
+    if data is None: return
+
+    plt.figure(figsize=(12, 5))
+    t, r = data[:, 0], data[:, 1]
+    plt.plot(t, r, color='#1f77b4', linewidth=1, alpha=0.6)
+    window = max(1, len(t) // 50)
+    avg = np.convolve(r, np.ones(window)/window, mode='same')
+    plt.plot(t, avg, color='#d62728', linewidth=2, label='Moving avg')
+    plt.axhline(np.mean(r), color='black', linestyle='--', linewidth=1, alpha=0.5, label=f'Mean = {np.mean(r):.3f} nm')
+
+    plt.title('RMSD')
+    plt.xlabel('Time (ns)')
+    plt.ylabel('RMSD (nm)')
+    plt.legend()
+    plt.grid(True, alpha=0.2)
+    plt.tight_layout()
+    plt.savefig(output)
+    print(f"Saved: {output}")
+
+
+def plot_thermodynamics(temp_file='temperature.xvg', press_file='pressure.xvg',
+                        dens_file='density.xvg', pot_file='potential_energy.xvg',
+                        output='results_plot/Thermodynamics.png'):
+    """4-panel thermodynamic convergence plot."""
+    files = [
+        (temp_file,  'Temperature (K)',   '#e377c2'),
+        (press_file, 'Pressure (bar)',    '#17becf'),
+        (dens_file,  'Density (kg/m$^3$)','#2ca02c'),
+        (pot_file,   'Potential (kJ/mol)','#ff7f0e'),
+    ]
+    datasets = [(read_xvg(f), lbl, col) for f, lbl, col in files]
+    available = [(d, lbl, col) for d, lbl, col in datasets if d is not None]
+    if not available: return
+
+    n = len(available)
+    fig, axes = plt.subplots(n, 1, figsize=(12, 3 * n), sharex=False)
+    if n == 1: axes = [axes]
+
+    for ax, (d, lbl, col) in zip(axes, available):
+        ax.plot(d[:, 0], d[:, 1], color=col, linewidth=1)
+        ax.set_ylabel(lbl)
+        ax.grid(True, alpha=0.2)
+        # running mean line
+        w = max(1, len(d) // 50)
+        avg = np.convolve(d[:, 1], np.ones(w)/w, mode='same')
+        ax.plot(d[:, 0], avg, color='black', linewidth=1.5, linestyle='--', alpha=0.7)
+
+    axes[-1].set_xlabel('Time (ps)')
+    plt.tight_layout()
+    plt.savefig(output)
+    print(f"Saved: {output}")
+
+
+def plot_dssp(ss_xpm='ss.xpm', scount_file='scount.xvg',
+             output='results_plot/DSSP.png'):
+    """Plot secondary structure evolution as heatmap + fraction time series."""
+    # --- heatmap from xpm ---
+    mat = parse_xpm(ss_xpm)
+    sc  = read_xvg(scount_file)
+    if mat is None and sc is None:
+        print(f"Skipping DSSP: {ss_xpm} and {scount_file} missing.")
+        return
+
+    if mat is not None and sc is not None:
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 8),
+                                        gridspec_kw={'height_ratios': [3, 1]})
+    elif mat is not None:
+        fig, ax1 = plt.subplots(figsize=(12, 5))
+        ax2 = None
+    else:
+        fig, ax2 = plt.subplots(figsize=(12, 4))
+        ax1 = None
+
+    if ax1 is not None:
+        ax1.imshow(mat, aspect='auto', cmap='tab10', origin='upper')
+        ax1.set_xlabel('Frame index')
+        ax1.set_ylabel('Residue index')
+        ax1.set_title('Secondary structure')
+
+    if ax2 is not None:
+        for i in range(1, sc.shape[1]):
+            ax2.plot(sc[:, 0], sc[:, i], linewidth=1.2, alpha=0.8)
+        ax2.set_xlabel('Time (ps)')
+        ax2.set_ylabel('Residue count')
+        ax2.grid(True, alpha=0.2)
+
+    plt.tight_layout()
+    plt.savefig(output)
+    print(f"Saved: {output}")
+
+
+def plot_contact_map(contact_xpm='contacts.xpm',
+                    output='results_plot/Contact_Map.png'):
+    """Plot residue-residue contact frequency (fraction of frames)."""
+    data = parse_xpm(contact_xpm)
+    if data is None:
+        print(f"Skipping contact map: {contact_xpm} not found.")
+        return
+
+    # Normalise 0-1
+    d_max = np.max(data)
+    norm = data / d_max if d_max > 0 else data
+
+    plt.figure(figsize=(10, 9))
+    sns.heatmap(norm, cmap='Blues_r', square=True,
+                cbar_kws={'label': 'Contact frequency'})
+    plt.title('Residue contact map')
+    plt.xlabel('Residue index')
+    plt.ylabel('Residue index')
+    plt.tight_layout()
+    plt.savefig(output)
+    print(f"Saved: {output}")
+
+
+def plot_eigenvalues(eigenval_file='eigenval.xvg',
+                    output='results_plot/PCA_Eigenvalues.png'):
+    """PCA scree plot — variance explained per eigenvector."""
+    data = read_xvg(eigenval_file)
+    if data is None: return
+
+    # eigenval.xvg: col0 = index, col1 = eigenvalue (nm^2)
+    idx = data[:, 0].astype(int)
+    ev  = data[:, 1]
+    pct = ev / ev.sum() * 100
+    cumsum = np.cumsum(pct)
+
+    n = min(20, len(idx))  # show top 20
+    fig, ax1 = plt.subplots(figsize=(10, 6))
+    ax1.bar(idx[:n], pct[:n], color='#1f77b4', alpha=0.7, label='Individual')
+    ax1.set_xlabel('Eigenvector')
+    ax1.set_ylabel('Variance (%)')
+    ax2 = ax1.twinx()
+    ax2.plot(idx[:n], cumsum[:n], color='#d62728', marker='o',
+             markersize=4, linewidth=2, label='Cumulative')
+    ax2.set_ylabel('Cumulative variance (%)')
+    ax2.axhline(90, color='grey', linestyle='--', linewidth=1, alpha=0.6)
+    plt.title('PCA eigenvalues')
+    fig.legend(loc='upper right', bbox_to_anchor=(0.9, 0.88))
+    plt.tight_layout()
+    plt.savefig(output)
+    print(f"Saved: {output}")
+
+
+def plot_hbond_autocorr(hbac_file='hbac.xvg',
+                        output='results_plot/HBond_Autocorr.png'):
+    """Plot H-bond autocorrelation function (lifetime indicator)."""
+    data = read_xvg(hbac_file)
+    if data is None: return
+
+    plt.figure(figsize=(10, 5))
+    t = data[:, 0]
+    # hbac.xvg has multiple columns (continuous, intermittent, ...)
+    labels = ['Continuous', 'Intermittent']
+    colors = ['#1f77b4', '#ff7f0e']
+    for i, (lbl, col) in enumerate(zip(labels, colors)):
+        if data.shape[1] > i + 1:
+            plt.plot(t, data[:, i + 1], label=lbl, color=col, linewidth=1.5)
+
+    plt.title('H-bond autocorrelation')
+    plt.xlabel('Time (ps)')
+    plt.ylabel('C(t)')
+    plt.ylim(0, 1)
+    plt.legend()
+    plt.grid(True, alpha=0.2)
+    plt.tight_layout()
+    plt.savefig(output)
+    print(f"Saved: {output}")
+
+
+def plot_msd(msd_file='msd.xvg', output='results_plot/MSD.png'):
+    """Plot Mean Square Displacement."""
+    data = read_xvg(msd_file)
+    if data is None: return
+
+    plt.figure(figsize=(10, 6))
+    t = data[:, 0]
+    msd = data[:, 1]
+    plt.plot(t, msd, color='#2ca02c', linewidth=2)
+
+    # Estimate diffusion coefficient D from linear region (last 60%)
+    n60 = int(len(t) * 0.4)
+    if n60 > 2:
+        coeffs = np.polyfit(t[n60:], msd[n60:], 1)
+        D = coeffs[0] / 6.0  # 3D: MSD = 6Dt
+        plt.plot(t[n60:], np.polyval(coeffs, t[n60:]),
+                 '--', color='black', linewidth=1.5,
+                 label=f'D ≈ {D:.3e} nm²/ps')
+        plt.legend()
+
+    plt.title('Mean square displacement')
+    plt.xlabel('Time (ps)')
+    plt.ylabel('MSD (nm$^2$)')
+    plt.grid(True, alpha=0.2)
+    plt.tight_layout()
+    plt.savefig(output)
+    print(f"Saved: {output}")
+
+
+def plot_saltbridges(saltbr_pattern='sb', output='results_plot/Salt_Bridges.png'):
+    """Plot salt bridge distances from gmx saltbr output files."""
+    import glob
+    files = sorted(glob.glob(f'{saltbr_pattern}*.xvg'))
+    if not files:
+        print(f"Skipping salt bridges: no files matching '{saltbr_pattern}*.xvg'")
+        return
+
+    plt.figure(figsize=(12, 5))
+    cmap = plt.get_cmap('tab10')
+    for i, f in enumerate(files[:10]):
+        d = read_xvg(f)
+        if d is None: continue
+        label = os.path.splitext(os.path.basename(f))[0]
+        plt.plot(d[:, 0], d[:, 1], linewidth=1.2,
+                 color=cmap(i % 10), alpha=0.8, label=label)
+
+    plt.axhline(0.4, color='red', linestyle='--', linewidth=1,
+                alpha=0.6, label='Cutoff 0.4 nm')
+    plt.title('Salt bridge distances')
+    plt.xlabel('Time (ps)')
+    plt.ylabel('Distance (nm)')
+    plt.legend(fontsize=9, ncol=2)
+    plt.grid(True, alpha=0.2)
+    plt.tight_layout()
+    plt.savefig(output)
+    print(f"Saved: {output}")
+
+
+def plot_cluster_rmsd_dist(dist_file='cluster_dist.xvg',
+                           output='results_plot/Cluster_RMSD_Dist.png'):
+    """Plot RMSD distribution histogram from clustering."""
+    data = read_xvg(dist_file)
+    if data is None: return
+
+    plt.figure(figsize=(8, 5))
+    rmsd_vals = data[:, 1] if data.shape[1] > 1 else data[:, 0]
+    plt.hist(rmsd_vals, bins=40, color='#9467bd', edgecolor='white',
+             linewidth=0.5, alpha=0.85)
+    plt.axvline(np.mean(rmsd_vals), color='black', linestyle='--',
+                linewidth=1.5, label=f'Mean = {np.mean(rmsd_vals):.3f} nm')
+    plt.title('Pairwise RMSD distribution')
+    plt.xlabel('RMSD (nm)')
+    plt.ylabel('Frequency')
+    plt.legend()
+    plt.grid(True, axis='y', alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(output)
+    print(f"Saved: {output}")
+
+
+def plot_dihedral_dist(dih_file='dihedral.xvg',
+                       output='results_plot/Dihedral_Dist.png'):
+    """Plot dihedral angle distribution."""
+    data = read_xvg(dih_file)
+    if data is None: return
+
+    angles = data[:, 1:].flatten()
+    plt.figure(figsize=(8, 5))
+    plt.hist(angles, bins=72, range=(-180, 180), color='#8c564b',
+             edgecolor='white', linewidth=0.4, alpha=0.85, density=True)
+    plt.title('Dihedral angle distribution')
+    plt.xlabel('Angle (deg)')
+    plt.ylabel('Probability density')
+    plt.xlim(-180, 180)
+    plt.xticks(range(-180, 181, 60))
+    plt.grid(True, axis='y', alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(output)
+    print(f"Saved: {output}")
+
+
+def plot_equilibration(stage='nvt',
+                       output_prefix='results_plot'):
+    """Plot NVT or NPT equilibration convergence (T, P, potential)."""
+    panels = [
+        (f'{stage}_temperature.xvg', 'Temperature (K)',    '#e377c2'),
+        (f'{stage}_pressure.xvg',    'Pressure (bar)',     '#17becf'),
+        (f'{stage}_potential.xvg',   'Potential (kJ/mol)', '#ff7f0e'),
+    ]
+    available = [(read_xvg(f), lbl, col) for f, lbl, col in panels
+                 if os.path.exists(f) and read_xvg(f) is not None]
+    if not available: return
+
+    n = len(available)
+    fig, axes = plt.subplots(n, 1, figsize=(12, 3 * n), sharex=False)
+    if n == 1: axes = [axes]
+
+    for ax, (d, lbl, col) in zip(axes, available):
+        ax.plot(d[:, 0], d[:, 1], color=col, linewidth=1)
+        ax.set_ylabel(lbl)
+        ax.grid(True, alpha=0.2)
+
+    axes[-1].set_xlabel('Time (ps)')
+    plt.suptitle(stage.upper() + ' equilibration', y=1.01)
+    plt.tight_layout()
+    out = f'{output_prefix}/{stage.upper()}_Equilibration.png'
+    plt.savefig(out)
+    print(f"Saved: {out}")
+
 if __name__ == "__main__":
     
     output_dir = 'results_plot'
@@ -576,39 +880,61 @@ if __name__ == "__main__":
         print(f"Created directory: {output_dir}")
     
     # 1. Structural stability
-    plot_rmsf_perix('rmsf.xvg', output=f'{output_dir}/RMSF.png')
-    plot_rmsd_matrix('rmsd_matrix.xpm', output=f'{output_dir}/RMSD_Matrix.png')
+    plot_rmsd('rmsd_backbone.xvg',     output=f'{output_dir}/RMSD.png')
+    plot_rmsf_perix('rmsf.xvg',        output=f'{output_dir}/RMSF.png')
+    plot_rmsd_matrix('rmsd_matrix.xpm',output=f'{output_dir}/RMSD_Matrix.png')
     
     # 2. Energy landscape
-    plot_fes_2d('rmsd.xvg', 'gyrate.xvg', output=f'{output_dir}/FES_2D.png')
-    plot_fes_3d('rmsd.xvg', 'gyrate.xvg', output=f'{output_dir}/FES_3D.png')
+    plot_fes_2d('rmsd_backbone.xvg', 'gyrate.xvg', output=f'{output_dir}/FES_2D.png')
+    plot_fes_3d('rmsd_backbone.xvg', 'gyrate.xvg', output=f'{output_dir}/FES_3D.png')
     
     # 3. Interactions & surface
-    plot_sasa('sasa.xvg', output=f'{output_dir}/SASA.png')
-    plot_hbond('hbond.xvg', output=f'{output_dir}/HBond.png')
-    plot_rg_anisotropy('gyrate.xvg', output=f'{output_dir}/Rg.png')
+    plot_sasa('sasa.xvg',              output=f'{output_dir}/SASA.png')
+    plot_hbond('hbond.xvg',            output=f'{output_dir}/HBond.png')
+    plot_rg_anisotropy('gyrate.xvg',   output=f'{output_dir}/Rg.png')
     
     # 4. Essential dynamics
-    plot_pca('proj.xvg', output=f'{output_dir}/PCA.png')
-    plot_dccm('dccm.xpm', output=f'{output_dir}/DCCM.png')
+    plot_pca('proj.xvg',               output=f'{output_dir}/PCA.png')
+    plot_dccm('dccm.xpm',              output=f'{output_dir}/DCCM.png')
+    plot_eigenvalues('eigenval.xvg',   output=f'{output_dir}/PCA_Eigenvalues.png')
+    plot_pca_fes('proj.xvg',           output=f'{output_dir}/PCA_FES.png')
     
     # 5. Interaction mapping
-    plot_interaction_heatmap('hbond_matrix.xpm', output=f'{output_dir}/Hbond_Map.png')
+    plot_interaction_heatmap('hbond_matrix.xpm',    output=f'{output_dir}/Hbond_Map.png')
+    plot_hbond_autocorr('hbac.xvg',                 output=f'{output_dir}/HBond_Autocorr.png')
+    plot_contact_map('contacts.xpm',                output=f'{output_dir}/Contact_Map.png')
     
     # 6. Cluster analysis
-    plot_clusters('cluster.log', output=f'{output_dir}/Clusters.png')
-    create_summary_dashboard(output=f'{output_dir}/Summary.png')
+    plot_clusters('cluster.log',             output=f'{output_dir}/Clusters.png')
+    plot_cluster_rmsd_dist('cluster_dist.xvg', output=f'{output_dir}/Cluster_RMSD_Dist.png')
+    create_summary_dashboard(            output=f'{output_dir}/Summary.png')
 
-    # 7. Additional analyses
-    plot_pca_fes('proj.xvg', output=f'{output_dir}/PCA_FES.png')
-    plot_hydration_rdf('hydration_rdf.xvg', output=f'{output_dir}/RDF.png')
-    plot_residue_sasa('residue_sasa.xvg', output=f'{output_dir}/SASA_Residue.png')
+    # 7. Additional structure analyses
+    plot_ramachandran('rama.xvg',            output=f'{output_dir}/Ramachandran.png')
+    plot_dssp('ss.xpm', 'scount.xvg',       output=f'{output_dir}/DSSP.png')
+    plot_dihedral_dist('dihedral.xvg',       output=f'{output_dir}/Dihedral_Dist.png')
+    plot_hydration_rdf('hydration_rdf.xvg',  output=f'{output_dir}/RDF.png')
+    plot_residue_sasa('residue_sasa.xvg',    output=f'{output_dir}/SASA_Residue.png')
     plot_prot_lig_dist_map('prot_lig_map.xpm', output=f'{output_dir}/Distance_Map.png')
-
-    # 8. Structural quality
-    plot_ramachandran('rama.xvg', output=f'{output_dir}/Ramachandran.png')
-    plot_pocket_sasa('pocket_sasa.xvg', output=f'{output_dir}/Pocket_SASA.png')
+    plot_pocket_sasa('pocket_sasa.xvg',      output=f'{output_dir}/Pocket_SASA.png')
+    
+    # 8. Protein network
     plot_protein_network('protein_matrix.xpm', output=f'{output_dir}/Residue_Distance_Matrix.png')
-    plot_transition_path('cluster.log', output=f'{output_dir}/Cluster_Transition.png')
+    plot_transition_path('cluster.log',      output=f'{output_dir}/Cluster_Transition.png')
+    plot_saltbridges('sb',                   output=f'{output_dir}/Salt_Bridges.png')
+    plot_msd('msd.xvg',                      output=f'{output_dir}/MSD.png')
+    
+    # 9. Thermodynamics (production MD)
+    plot_thermodynamics(
+        temp_file='temperature.xvg',
+        press_file='pressure.xvg',
+        dens_file='density.xvg',
+        pot_file='potential_energy.xvg',
+        output=f'{output_dir}/Thermodynamics.png'
+    )
+    
+    # 10. Equilibration convergence (NVT & NPT)
+    plot_equilibration(stage='nvt', output_prefix=output_dir)
+    plot_equilibration(stage='npt', output_prefix=output_dir)
 
     print(f"\nDone. Results saved to: {output_dir}")
